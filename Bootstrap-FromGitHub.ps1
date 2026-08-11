@@ -58,7 +58,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [string]$Repo = "https://github.com/isg187/azurecustom",                          # e.g. "Contoso/software-installers"
+    [string]$Repo = "isg187/azurecustom",                          # e.g. "Contoso/software-installers"
 
     [string]$Branch = "main",
 
