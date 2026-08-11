@@ -122,12 +122,12 @@ Write-BootstrapLog "Force       : $Force"
 # Files we expect to download (relative to PathInRepo)
 # ---------------------------------------------------------------------------
 $filesToDownload = @(
-    "common/Write-Log.ps1",
-    "install/Install-Chrome.ps1",
-    "install/Install-Firefox.ps1",
-    "install/Install-7Zip.ps1",
-    "install/Install-AcrobatReader.ps1",
-    "Install-All.ps1"
+    "common/write-log.ps1",
+    "install/install-chrome.ps1",
+    "install/install-firefox.ps1",
+    "install/install-7zip.ps1",
+    "install/install-acrobatreader.ps1",
+    "install-all.ps1"
 )
 
 # ---------------------------------------------------------------------------
