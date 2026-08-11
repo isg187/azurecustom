@@ -84,7 +84,7 @@ function Get-InstalledFirefoxVersion {
     )
 
     foreach ($p in $paths) {
-        $item = Get-ItemProperty -Path $p -ErrorAction SilentlyContinue | Select-Object -First 1
+        $item = Get-ItemProperty -Path $p -ErrorAction Ignore | Select-Object -First 1
         if ($item) {
             if ($item.CurrentVersion) { return $item.CurrentVersion }
             if ($item.DisplayVersion) { return $item.DisplayVersion }
@@ -96,7 +96,7 @@ function Get-InstalledFirefoxVersion {
         "${env:ProgramFiles(x86)}\Mozilla Firefox\firefox.exe"
     )
     foreach ($exe in $exePaths) {
-        if (Test-Path $exe) {
+        if (Test-Path $exe -ErrorAction Ignore) {
             return (Get-Item $exe).VersionInfo.ProductVersion
         }
     }
