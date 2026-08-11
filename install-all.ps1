@@ -58,10 +58,11 @@ Write-Log "Log              : $script:LogPath"
 Write-Log ""
 
 $installers = @(
-    @{ Name = "Google Chrome";           Script = "install\Install-Chrome.ps1" },
-    @{ Name = "Mozilla Firefox (ESR)";   Script = "install\Install-Firefox.ps1" },
-    @{ Name = "7-Zip";                   Script = "install\Install-7Zip.ps1" },
-    @{ Name = "Adobe Acrobat Reader";    Script = "install\Install-AcrobatReader.ps1" }
+    @{ Name = "Google Chrome"; Script = "install\Install-Chrome.ps1" },
+    @{ Name = "Mozilla Firefox (ESR)"; Script = "install\Install-Firefox.ps1" },
+    @{ Name = "7-Zip"; Script = "install\Install-7Zip.ps1" },
+    @{ Name = "Adobe Acrobat Reader"; Script = "install\Install-AcrobatReader.ps1" },
+    @{ Name = "PowerShell 7"; Script = "install\Install-PowerShell7.ps1" }
 )
 
 $results = @()
