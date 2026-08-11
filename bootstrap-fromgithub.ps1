@@ -71,7 +71,7 @@ param(
 
     [string]$GitHubToken
 )
-
+if (-not $RunInstallAll) { $RunInstallAll = $true }
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
