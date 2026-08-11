@@ -1,16 +1,21 @@
 <#
 .SYNOPSIS
-    Orchestrator that installs Chrome, Firefox, 7-Zip, and Adobe Acrobat Reader.
+    Dynamically runs every installer script found in the install\ folder.
 
 .DESCRIPTION
-    Calls the individual installer scripts in a defined order.
-    Stops on first failure by default (change $ContinueOnError if desired).
+    Discovers all *.ps1 files under the install directory and executes them
+    one by one. No hardcoded list — when you add a new Install-*.ps1 script
+    it is automatically included on the next run.
 
 .PARAMETER Force
     Passes -Force to every individual installer.
 
 .PARAMETER ContinueOnError
     Continues to the next package even if one fails.
+
+.PARAMETER InstallDir
+    Folder containing the individual installer scripts.
+    Default: .\install (relative to this script)
 
 .EXAMPLE
     .\Install-All.ps1
@@ -22,7 +27,8 @@
 [CmdletBinding()]
 param(
     [switch]$Force,
-    [switch]$ContinueOnError
+    [switch]$ContinueOnError,
+    [string]$InstallDir
 )
 
 #Requires -RunAsAdministrator
@@ -45,82 +51,101 @@ else {
     }
 }
 
+# ---------------------------------------------------------------------------
+# Logging setup
+# ---------------------------------------------------------------------------
 $logDir = Join-Path $PSScriptRoot "logs"
 if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
 $script:LogPath = Join-Path $logDir ("Install-All_{0}.log" -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
 
+if (-not $InstallDir) {
+    $InstallDir = Join-Path $PSScriptRoot "install"
+}
+
 Write-Log "=============================================="
-Write-Log "  Software Installation Orchestrator"
+Write-Log "  Software Installation Orchestrator (Dynamic)"
 Write-Log "=============================================="
 Write-Log "Force            : $Force"
 Write-Log "ContinueOnError  : $ContinueOnError"
+Write-Log "InstallDir       : $InstallDir"
 Write-Log "Log              : $script:LogPath"
 Write-Log ""
 
-$installers = @(
-    @{ Name = "Google Chrome"; Script = "install\Install-Chrome.ps1" },
-    @{ Name = "Mozilla Firefox (ESR)"; Script = "install\Install-Firefox.ps1" },
-    @{ Name = "7-Zip"; Script = "install\Install-7Zip.ps1" },
-    @{ Name = "Adobe Acrobat Reader"; Script = "install\Install-AcrobatReader.ps1" },
-    @{ Name = "PowerShell 7"; Script = "install\Install-PowerShell7.ps1" }
-)
+# ---------------------------------------------------------------------------
+# Discover installer scripts
+# ---------------------------------------------------------------------------
+if (-not (Test-Path $InstallDir)) {
+    Write-Log "Install directory not found: $InstallDir" -Level ERROR
+    exit 1
+}
 
+$installerScripts = Get-ChildItem -Path $InstallDir -Filter "*.ps1" -File |
+    Sort-Object Name
+
+if (-not $installerScripts -or $installerScripts.Count -eq 0) {
+    Write-Log "No .ps1 installer scripts found in $InstallDir" -Level ERROR
+    exit 1
+}
+
+Write-Log "Discovered $($installerScripts.Count) installer script(s):"
+$installerScripts | ForEach-Object { Write-Log "  - $($_.Name)" }
+Write-Log ""
+
+# ---------------------------------------------------------------------------
+# Run each installer
+# ---------------------------------------------------------------------------
 $results = @()
 $overallSuccess = $true
 
-foreach ($item in $installers) {
-    $scriptPath = Join-Path $PSScriptRoot $item.Script
+foreach ($scriptFile in $installerScripts) {
+    $scriptPath = $scriptFile.FullName
+    $name = $scriptFile.BaseName   # e.g. Install-Chrome
 
     Write-Log "--------------------------------------------------"
-    Write-Log "Starting: $($item.Name)"
+    Write-Log "Starting: $name"
     Write-Log "Script  : $scriptPath"
 
-    if (-not (Test-Path $scriptPath)) {
-        Write-Log "Script not found: $scriptPath" -Level ERROR
-        $results += [pscustomobject]@{ Name = $item.Name; Success = $false; Message = "Script missing" }
-        $overallSuccess = $false
-        if (-not $ContinueOnError) { break }
-        continue
-    }
-
     try {
-        $argList = @()
+        $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $scriptPath)
         if ($Force) { $argList += "-Force" }
 
         $proc = Start-Process -FilePath "powershell.exe" `
-            -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $scriptPath) + $argList `
+            -ArgumentList $argList `
             -Wait -PassThru -NoNewWindow
 
         if ($proc.ExitCode -eq 0) {
-            Write-Log "$($item.Name) completed successfully." -Level SUCCESS
-            $results += [pscustomobject]@{ Name = $item.Name; Success = $true; Message = "OK" }
+            Write-Log "$name completed successfully." -Level SUCCESS
+            $results += [pscustomobject]@{ Name = $name; Success = $true; Message = "OK" }
         }
         else {
-            Write-Log "$($item.Name) failed with exit code $($proc.ExitCode)." -Level ERROR
-            $results += [pscustomobject]@{ Name = $item.Name; Success = $false; Message = "Exit code $($proc.ExitCode)" }
+            Write-Log "$name failed with exit code $($proc.ExitCode)." -Level ERROR
+            $results += [pscustomobject]@{ Name = $name; Success = $false; Message = "Exit code $($proc.ExitCode)" }
             $overallSuccess = $false
             if (-not $ContinueOnError) { break }
         }
     }
     catch {
-        Write-Log "Exception while running $($item.Name): $($_.Exception.Message)" -Level ERROR
-        $results += [pscustomobject]@{ Name = $item.Name; Success = $false; Message = $_.Exception.Message }
+        Write-Log "Exception while running $name : $($_.Exception.Message)" -Level ERROR
+        $results += [pscustomobject]@{ Name = $name; Success = $false; Message = $_.Exception.Message }
         $overallSuccess = $false
         if (-not $ContinueOnError) { break }
     }
 }
 
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
 Write-Log ""
 Write-Log "=============================================="
 Write-Log "  Summary"
 Write-Log "=============================================="
 $results | ForEach-Object {
     $status = if ($_.Success) { "SUCCESS" } else { "FAILED" }
-    Write-Log ("{0,-30} {1}" -f $_.Name, $status)
+    Write-Log ("{0,-40} {1}" -f $_.Name, $status)
 }
 
 if ($overallSuccess) {
-    Write-Log "All requested software installed successfully." -Level SUCCESS
+    Write-Log "All discovered installers completed successfully." -Level SUCCESS
     exit 0
 }
 else {

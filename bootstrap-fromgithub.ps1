@@ -1,85 +1,82 @@
 <#
 .SYNOPSIS
-    Downloads the software installer scripts from a GitHub repository.
+    Dynamically downloads all scripts from a GitHub repository folder.
 
 .DESCRIPTION
-    Bootstrap script that pulls the modular installer framework (common helpers,
-    individual installers, and Install-All.ps1) from a GitHub repo so they can
-    be executed on a machine that does not yet have the scripts locally.
+    Bootstrap script that discovers and downloads every file under a given path
+    in a GitHub repository (recursively). No hardcoded file list — when you add
+    a new installer script to the repo, the next bootstrap run will pick it up
+    automatically.
 
-    Supports:
-    - Raw file download from a branch or tag
-    - Optional SHA256 verification (if you supply expected hashes)
-    - Clean target directory handling
-    - Logging
-
-    Designed for enterprise / GCC High use: parameters are explicit, sources
-    are controlled, and the script is easy to audit.
+    Supports public and private repos, branch/tag selection, and optional
+    automatic execution of Install-All.ps1 after download.
 
 .PARAMETER Repo
-    GitHub repository in the form "Owner/Repo" (e.g. "MyOrg/software-installers").
+    GitHub repository in the form "Owner/Repo" (e.g. "isg187/azurecustom").
 
 .PARAMETER Branch
     Branch or tag to pull from. Default: "main".
 
 .PARAMETER PathInRepo
-    Folder inside the repository that contains the scripts.
-    Default: "scripts" (matches the structure we built).
+    Folder inside the repository to download from.
+    Use "" (empty) for the repository root.
+    Default: "" (root) so it works whether scripts live at root or under a subfolder.
 
 .PARAMETER Destination
-    Local folder where the scripts will be downloaded.
-    Default: "$PSScriptRoot" (same folder as this bootstrap script) or a temp location if run standalone.
+    Local folder where the scripts will be placed.
+    Default: C:\ProgramData\SoftwareInstallers\scripts (or current scripts folder if already present).
 
 .PARAMETER Force
-    Overwrite existing files.
+    Overwrite existing local files.
+
+.PARAMETER FileFilter
+    Only download files matching this wildcard. Default: "*.ps1"
+    Set to "*" to download everything under PathInRepo.
 
 .PARAMETER RunInstallAll
-    After successful download, automatically execute Install-All.ps1.
+    After successful download, automatically execute Install-All.ps1 (if present).
 
 .PARAMETER ForceInstall
     Passes -Force to Install-All.ps1 when -RunInstallAll is used.
 
 .PARAMETER GitHubToken
-    Optional personal access token or GitHub App token for private repositories.
-    Prefer passing via environment variable or secure string in production.
+    Optional token for private repositories.
+    Can also be supplied via the GITHUB_TOKEN environment variable.
 
 .EXAMPLE
-    .\Bootstrap-FromGitHub.ps1 -Repo "MyOrg/endpoint-installers" -Branch "main"
+    .\Bootstrap-FromGitHub.ps1 -Repo "isg187/azurecustom" -Branch "main"
 
 .EXAMPLE
-    .\Bootstrap-FromGitHub.ps1 -Repo "MyOrg/endpoint-installers" -Branch "v1.2.0" -Destination "C:\ProgramData\SoftwareInstallers" -Force -RunInstallAll
-
-.NOTES
-    - Requires network access to github.com (or your GitHub Enterprise host).
-    - For GCC High / CMMC: prefer a private repo under your control and consider
-      adding file hash verification before execution.
+    .\Bootstrap-FromGitHub.ps1 -Repo "isg187/azurecustom" -PathInRepo "scripts" -Force -RunInstallAll
 #>
 
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [string]$Repo = "isg187/azurecustom",                          # e.g. "Contoso/software-installers"
+    [string]$Repo = "isg187/azurecustom",
 
     [string]$Branch = "main",
 
-    [string]$PathInRepo,        # folder inside the repo
+    [string]$PathInRepo = "",                 # empty = repository root
 
     [string]$Destination,
 
     [switch]$Force,
 
+    [string]$FileFilter = "*.ps1",            # only .ps1 by default
+
     [switch]$RunInstallAll,
 
     [switch]$ForceInstall,
 
-    [string]$GitHubToken                    # optional for private repos
+    [string]$GitHubToken
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # ---------------------------------------------------------------------------
-# Minimal logger (self-contained so bootstrap works even before common is present)
+# Minimal logger (self-contained)
 # ---------------------------------------------------------------------------
 function Write-BootstrapLog {
     param(
@@ -101,8 +98,6 @@ function Write-BootstrapLog {
 # Defaults
 # ---------------------------------------------------------------------------
 if (-not $Destination) {
-    # If the bootstrap lives inside an existing scripts folder, use that.
-    # Otherwise drop into a well-known ProgramData location.
     if ($PSScriptRoot -and (Test-Path (Join-Path $PSScriptRoot "install"))) {
         $Destination = $PSScriptRoot
     }
@@ -111,71 +106,116 @@ if (-not $Destination) {
     }
 }
 
-Write-BootstrapLog "===== GitHub Bootstrap ====="
+# Normalize PathInRepo (remove leading/trailing slashes)
+$PathInRepo = ($PathInRepo -replace '^/+', '' -replace '/+$', '').Trim()
+
+Write-BootstrapLog "===== GitHub Bootstrap (Dynamic) ====="
 Write-BootstrapLog "Repo        : $Repo"
 Write-BootstrapLog "Branch/Tag  : $Branch"
-Write-BootstrapLog "PathInRepo  : $PathInRepo"
+Write-BootstrapLog "PathInRepo  : $(if ($PathInRepo) { $PathInRepo } else { '(repository root)' })"
 Write-BootstrapLog "Destination : $Destination"
+Write-BootstrapLog "FileFilter  : $FileFilter"
 Write-BootstrapLog "Force       : $Force"
 
 # ---------------------------------------------------------------------------
-# Files we expect to download (relative to PathInRepo)
+# Headers
 # ---------------------------------------------------------------------------
-$filesToDownload = @(
-    "common/write-log.ps1",
-    "install/install-chrome.ps1",
-    "install/install-firefox.ps1",
-    "install/install-7zip.ps1",
-    "install/install-acrobatreader.ps1",
-    "install-all.ps1"
-)
+$headers = @{
+    "User-Agent" = "PowerShell-Bootstrap-Script"
+    "Accept"     = "application/vnd.github+json"
+}
+if ($GitHubToken) {
+    $headers["Authorization"] = "Bearer $GitHubToken"
+    Write-BootstrapLog "Using provided GitHub token."
+}
+elseif ($env:GITHUB_TOKEN) {
+    $headers["Authorization"] = "Bearer $($env:GITHUB_TOKEN)"
+    Write-BootstrapLog "Using GITHUB_TOKEN environment variable."
+}
 
 # ---------------------------------------------------------------------------
-# Helper: Build raw GitHub URL
+# Helper: Recursively list all files under a GitHub path via Contents API
 # ---------------------------------------------------------------------------
-function Get-RawGitHubUrl {
+function Get-GitHubFilesRecursive {
     param(
         [string]$Repo,
         [string]$Branch,
-        [string]$RelativePath
+        [string]$Path,          # can be empty for root
+        [hashtable]$Headers
     )
-    # Public GitHub raw URL pattern
-    # For GitHub Enterprise change the host accordingly
-    $encodedPath = ($RelativePath -split '/' | ForEach-Object { [uri]::EscapeDataString($_) }) -join '/'
-    return "https://raw.githubusercontent.com/$Repo/$Branch/$PathInRepo/$encodedPath"
+
+    $apiPath = if ($Path) {
+        "https://api.github.com/repos/$Repo/contents/$Path`?ref=$Branch"
+    }
+    else {
+        "https://api.github.com/repos/$Repo/contents`?ref=$Branch"
+    }
+
+    Write-BootstrapLog "Listing: $apiPath" -Level INFO
+
+    try {
+        $items = Invoke-RestMethod -Uri $apiPath -Headers $Headers -TimeoutSec 30
+    }
+    catch {
+        throw "Failed to list GitHub contents at '$Path': $($_.Exception.Message)"
+    }
+
+    # API returns a single object when Path points to a file; normalize to array
+    if ($items -isnot [System.Array]) {
+        $items = @($items)
+    }
+
+    $files = @()
+
+    foreach ($item in $items) {
+        if ($item.type -eq 'file') {
+            $files += [pscustomobject]@{
+                Path        = $item.path          # full path from repo root
+                DownloadUrl = $item.download_url
+                Size        = $item.size
+                Sha         = $item.sha
+            }
+        }
+        elseif ($item.type -eq 'dir') {
+            # Recurse into subdirectories
+            $files += Get-GitHubFilesRecursive -Repo $Repo -Branch $Branch -Path $item.path -Headers $Headers
+        }
+    }
+
+    return $files
 }
 
 # ---------------------------------------------------------------------------
 # Helper: Download a single file
 # ---------------------------------------------------------------------------
-function Download-File {
+function Save-GitHubFile {
     param(
-        [string]$Url,
-        [string]$OutFile,
+        [string]$DownloadUrl,
+        [string]$LocalPath,
         [hashtable]$Headers
     )
 
-    $dir = Split-Path $OutFile -Parent
-    if (-not (Test-Path $dir)) {
+    $dir = Split-Path $LocalPath -Parent
+    if ($dir -and -not (Test-Path $dir)) {
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
     }
 
-    if ((Test-Path $OutFile) -and -not $Force) {
-        Write-BootstrapLog "Already exists (skipping): $OutFile" -Level WARN
+    if ((Test-Path $LocalPath) -and -not $Force) {
+        Write-BootstrapLog "Already exists (skipping): $LocalPath" -Level WARN
         return $false
     }
 
-    Write-BootstrapLog "Downloading: $Url"
+    Write-BootstrapLog "Downloading: $DownloadUrl"
     try {
-        Invoke-WebRequest -Uri $Url -OutFile $OutFile -Headers $Headers -UseBasicParsing -TimeoutSec 60
-        if ((Get-Item $OutFile).Length -lt 100) {
+        Invoke-WebRequest -Uri $DownloadUrl -OutFile $LocalPath -Headers $Headers -UseBasicParsing -TimeoutSec 60
+        if ((Get-Item $LocalPath).Length -lt 50) {
             throw "Downloaded file is unexpectedly small."
         }
-        Write-BootstrapLog "Saved: $OutFile" -Level SUCCESS
+        Write-BootstrapLog "Saved: $LocalPath" -Level SUCCESS
         return $true
     }
     catch {
-        Write-BootstrapLog "Failed to download $Url : $($_.Exception.Message)" -Level ERROR
+        Write-BootstrapLog "Failed: $($_.Exception.Message)" -Level ERROR
         throw
     }
 }
@@ -184,55 +224,76 @@ function Download-File {
 # Main
 # ---------------------------------------------------------------------------
 try {
-    # Prepare destination
     if (-not (Test-Path $Destination)) {
         New-Item -ItemType Directory -Path $Destination -Force | Out-Null
         Write-BootstrapLog "Created destination folder: $Destination"
     }
 
-    # Headers (support private repos)
-    $headers = @{
-        "User-Agent" = "PowerShell-Bootstrap-Script"
+    # Discover all files under PathInRepo
+    Write-BootstrapLog "Discovering files in repository..."
+    $allFiles = Get-GitHubFilesRecursive -Repo $Repo -Branch $Branch -Path $PathInRepo -Headers $headers
+
+    if (-not $allFiles -or $allFiles.Count -eq 0) {
+        throw "No files found under path '$PathInRepo' in $Repo ($Branch)."
     }
-    if ($GitHubToken) {
-        $headers["Authorization"] = "Bearer $GitHubToken"
-        Write-BootstrapLog "Using provided GitHub token for authentication."
+
+    Write-BootstrapLog "Found $($allFiles.Count) file(s) total."
+
+    # Apply filter
+    $filesToGet = $allFiles | Where-Object {
+        $name = Split-Path $_.Path -Leaf
+        $name -like $FileFilter
     }
-    elseif ($env:GITHUB_TOKEN) {
-        $headers["Authorization"] = "Bearer $($env:GITHUB_TOKEN)"
-        Write-BootstrapLog "Using GITHUB_TOKEN environment variable."
+
+    if (-not $filesToGet -or $filesToGet.Count -eq 0) {
+        throw "No files matched filter '$FileFilter'."
     }
+
+    Write-BootstrapLog "After filter '$FileFilter': $($filesToGet.Count) file(s) will be downloaded."
 
     $downloaded = 0
     $skipped    = 0
 
-    foreach ($relPath in $filesToDownload) {
-        $url      = Get-RawGitHubUrl -Repo $Repo -Branch $Branch -RelativePath $relPath
-        $localPath = Join-Path $Destination $relPath
+    foreach ($file in $filesToGet) {
+        # Calculate relative path from PathInRepo so local structure stays clean
+        $relativePath = $file.Path
+        if ($PathInRepo -and $relativePath.StartsWith("$PathInRepo/", [System.StringComparison]::OrdinalIgnoreCase)) {
+            $relativePath = $relativePath.Substring($PathInRepo.Length + 1)
+        }
 
-        $result = Download-File -Url $url -OutFile $localPath -Headers $headers
+        $localPath = Join-Path $Destination $relativePath
+
+        $result = Save-GitHubFile -DownloadUrl $file.DownloadUrl -LocalPath $localPath -Headers $headers
         if ($result) { $downloaded++ } else { $skipped++ }
     }
 
     Write-BootstrapLog "----------------------------------------------"
     Write-BootstrapLog "Download complete. New/updated: $downloaded  | Skipped: $skipped" -Level SUCCESS
 
-    # Optional: run the orchestrator
+    # Optional: run Install-All.ps1
     if ($RunInstallAll) {
         $installAll = Join-Path $Destination "Install-All.ps1"
         if (-not (Test-Path $installAll)) {
-            throw "Install-All.ps1 not found after download."
+            # Also check one level down in case structure differs
+            $alt = Get-ChildItem -Path $Destination -Filter "Install-All.ps1" -Recurse -ErrorAction SilentlyContinue |
+                   Select-Object -First 1
+            if ($alt) { $installAll = $alt.FullName }
         }
 
-        Write-BootstrapLog "Launching Install-All.ps1 ..."
-        $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $installAll)
-        if ($ForceInstall) { $argList += "-Force" }
-
-        $proc = Start-Process -FilePath "powershell.exe" -ArgumentList $argList -Wait -PassThru -NoNewWindow
-        if ($proc.ExitCode -ne 0) {
-            throw "Install-All.ps1 exited with code $($proc.ExitCode)"
+        if (-not (Test-Path $installAll)) {
+            Write-BootstrapLog "Install-All.ps1 not found after download — skipping auto-run." -Level WARN
         }
-        Write-BootstrapLog "Install-All.ps1 completed successfully." -Level SUCCESS
+        else {
+            Write-BootstrapLog "Launching Install-All.ps1 ..."
+            $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $installAll)
+            if ($ForceInstall) { $argList += "-Force" }
+
+            $proc = Start-Process -FilePath "powershell.exe" -ArgumentList $argList -Wait -PassThru -NoNewWindow
+            if ($proc.ExitCode -ne 0) {
+                throw "Install-All.ps1 exited with code $($proc.ExitCode)"
+            }
+            Write-BootstrapLog "Install-All.ps1 completed successfully." -Level SUCCESS
+        }
     }
     else {
         Write-BootstrapLog "Scripts are ready. To install software run:"
