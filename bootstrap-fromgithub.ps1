@@ -107,7 +107,7 @@ if (-not $Destination) {
         $Destination = $PSScriptRoot
     }
     else {
-        $Destination = Join-Path $env:ProgramData "SoftwareInstallers\scripts"
+        $Destination = Join-Path $env:ProgramData "SDL\scripts"
     }
 }
 
