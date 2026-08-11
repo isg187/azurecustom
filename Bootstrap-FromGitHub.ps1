@@ -64,7 +64,7 @@ param(
 
     [string]$PathInRepo,        # folder inside the repo
 
-    [string]$Destination = "C:\temp",
+    [string]$Destination,
 
     [switch]$Force,
 
