@@ -58,13 +58,13 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [string]$Repo,                          # e.g. "Contoso/software-installers"
+    [string]$Repo = "https://github.com/isg187/azurecustom",                          # e.g. "Contoso/software-installers"
 
     [string]$Branch = "main",
 
-    [string]$PathInRepo = "scripts",        # folder inside the repo
+    [string]$PathInRepo,        # folder inside the repo
 
-    [string]$Destination,
+    [string]$Destination = "C:\temp",
 
     [switch]$Force,
 
