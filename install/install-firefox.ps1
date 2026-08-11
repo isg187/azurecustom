@@ -84,10 +84,20 @@ function Get-InstalledFirefoxVersion {
     )
 
     foreach ($p in $paths) {
-        $item = Get-ItemProperty -Path $p -ErrorAction Ignore | Select-Object -First 1
-        if ($item) {
-            if ($item.CurrentVersion) { return $item.CurrentVersion }
-            if ($item.DisplayVersion) { return $item.DisplayVersion }
+        $items = Get-ItemProperty -Path $p -ErrorAction SilentlyContinue
+        foreach ($item in @($items)) {
+            if (-not $item) { continue }
+
+            # Safe property access under Set-StrictMode
+            $ver = $null
+            if ($item.PSObject.Properties['CurrentVersion']) {
+                $ver = $item.CurrentVersion
+            }
+            elseif ($item.PSObject.Properties['DisplayVersion']) {
+                $ver = $item.DisplayVersion
+            }
+
+            if ($ver) { return $ver }
         }
     }
 
@@ -96,7 +106,7 @@ function Get-InstalledFirefoxVersion {
         "${env:ProgramFiles(x86)}\Mozilla Firefox\firefox.exe"
     )
     foreach ($exe in $exePaths) {
-        if (Test-Path $exe -ErrorAction Ignore) {
+        if (Test-Path $exe) {
             return (Get-Item $exe).VersionInfo.ProductVersion
         }
     }
@@ -140,13 +150,13 @@ function Get-FirefoxDownloadInfo {
         $pattern = if ($Esr) { '((?>(?>[0-9]+[\.])+[0-9])+esr)' } else { '((?>(?>[0-9]+[\.])+[0-9])+(?!esr))' }
 
         $versions = [regex]::Matches($ftp.Content, $pattern) |
-            ForEach-Object { $_.Groups[1].Value } |
-            ForEach-Object {
-                $clean = $_ -replace 'esr$', ''
-                try { [version]$clean } catch { $null }
-            } |
-            Where-Object { $_ } |
-            Sort-Object -Descending
+        ForEach-Object { $_.Groups[1].Value } |
+        ForEach-Object {
+            $clean = $_ -replace 'esr$', ''
+            try { [version]$clean } catch { $null }
+        } |
+        Where-Object { $_ } |
+        Sort-Object -Descending
 
         if ($versions) {
             $version = if ($Esr) { "$($versions[0])esr" } else { $versions[0].ToString() }

@@ -74,12 +74,16 @@ function Get-InstalledAcrobatVersion {
     )
 
     foreach ($base in $paths) {
-        $app = Get-ItemProperty $base -ErrorAction SilentlyContinue |
-            Where-Object { $_.DisplayName -match 'Adobe Acrobat (Reader|DC)' -or $_.DisplayName -match 'Adobe Reader' } |
-            Select-Object -First 1
+        $apps = Get-ItemProperty $base -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.PSObject.Properties['DisplayName'] -and
+            ($_.DisplayName -match 'Adobe Acrobat (Reader|DC)' -or $_.DisplayName -match 'Adobe Reader')
+        }
 
-        if ($app -and $app.DisplayVersion) {
-            return $app.DisplayVersion
+        foreach ($app in @($apps)) {
+            if ($app.PSObject.Properties['DisplayVersion'] -and $app.DisplayVersion) {
+                return $app.DisplayVersion
+            }
         }
     }
 
