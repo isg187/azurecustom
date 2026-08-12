@@ -69,7 +69,7 @@ Write-Log "Force            : $Force"
 Write-Log "ContinueOnError  : $ContinueOnError"
 Write-Log "InstallDir       : $InstallDir"
 Write-Log "Log              : $script:LogPath"
-Write-Log ""
+
 
 # ---------------------------------------------------------------------------
 # Discover installer scripts
@@ -89,7 +89,7 @@ if (-not $installerScripts -or $installerScripts.Count -eq 0) {
 
 Write-Log "Discovered $($installerScripts.Count) installer script(s):"
 $installerScripts | ForEach-Object { Write-Log "  - $($_.Name)" }
-Write-Log ""
+
 
 # ---------------------------------------------------------------------------
 # Run each installer
@@ -135,7 +135,7 @@ foreach ($scriptFile in $installerScripts) {
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
-Write-Log ""
+
 Write-Log "=============================================="
 Write-Log "  Summary"
 Write-Log "=============================================="
