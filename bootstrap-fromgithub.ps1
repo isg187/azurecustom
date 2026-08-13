@@ -43,7 +43,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [string]$Repo = "https://github.com/isg187/azurecustom",
+    [string]$Repo = "isg187/azurecustom",
 
     [string]$Branch = "main",
 
