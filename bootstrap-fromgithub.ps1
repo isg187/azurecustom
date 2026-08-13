@@ -43,7 +43,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [string]$Repo,
+    [string]$Repo = "https://github.com/isg187/azurecustom",
 
     [string]$Branch = "main",
 
@@ -61,7 +61,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-
+if (-not $RunInstallAll) { $RunInstallAll = $true }
 function Write-BootstrapLog {
     param(
         [string]$Message,
@@ -71,10 +71,10 @@ function Write-BootstrapLog {
     $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     $entry = "[$ts] [$Level] $Message"
     switch ($Level) {
-        'ERROR'   { Write-Host $entry -ForegroundColor Red }
-        'WARN'    { Write-Host $entry -ForegroundColor Yellow }
+        'ERROR' { Write-Host $entry -ForegroundColor Red }
+        'WARN' { Write-Host $entry -ForegroundColor Yellow }
         'SUCCESS' { Write-Host $entry -ForegroundColor Green }
-        default   { Write-Host $entry }
+        default { Write-Host $entry }
     }
 }
 
@@ -94,7 +94,7 @@ try {
     New-Item -ItemType Directory -Path $TempPath -Force | Out-Null
 
     # Download entire repo as zip
-    $zipUrl  = "https://github.com/$Repo/archive/refs/heads/$Branch.zip"
+    $zipUrl = "https://github.com/$Repo/archive/refs/heads/$Branch.zip"
     $zipPath = Join-Path $TempPath "repo.zip"
 
     Write-BootstrapLog "Downloading: $zipUrl"
