@@ -54,7 +54,7 @@ Expand-Archive -Path $zipPath -DestinationPath $Destination -Force
 $scriptRoot = Get-ChildItem -Path $Destination -Directory | Where-Object { $_.Name -eq "azurecustom-main" } | Select-Object -First 1 -ExpandProperty FullName
 
 # Run the main script with desired parameters
-& "$scriptRoot\install-all.ps1"
+& "$scriptRoot\install-all.ps1" -Force ContinueOnError
 
 # Cleanup
 Remove-Item -Path $temp -Recurse -Force -ErrorAction SilentlyContinue
