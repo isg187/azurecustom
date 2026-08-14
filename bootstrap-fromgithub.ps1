@@ -53,15 +53,10 @@ param(
 
     [switch]$Force,
 
-    [switch]$RunInstallAll,
-
-    [switch]$ForceInstall,
-
     [switch]$KeepTemp
 )
 
 $ErrorActionPreference = "Stop"
-if (-not $RunInstallAll) { $RunInstallAll = $true }
 function Write-BootstrapLog {
     param(
         [string]$Message,
@@ -142,36 +137,26 @@ try {
     Copy-Item -Path (Join-Path $scriptsSource "*") -Destination $Destination -Recurse -Force
     Write-BootstrapLog "Copy complete." -Level SUCCESS
 
-    # Optional: run Install-All.ps1
-    if ($RunInstallAll) {
-        $installAll = Join-Path $Destination "Install-All.ps1"
-        if (-not (Test-Path $installAll)) {
-            # Fallback: search one level deeper
-            $found = Get-ChildItem -Path $Destination -Filter "Install-All.ps1" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($found) { $installAll = $found.FullName }
-        }
+    # Run Install-All.ps1
+    $installAll = Join-Path $Destination "Install-All.ps1"
+    if (-not (Test-Path $installAll)) {
+        # Fallback: search one level deeper
+        $found = Get-ChildItem -Path $Destination -Filter "Install-All.ps1" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($found) { $installAll = $found.FullName }
+    }
 
-        if (-not (Test-Path $installAll)) {
-            Write-BootstrapLog "Install-All.ps1 not found after extraction — skipping auto-run." -Level WARN
-        }
-        else {
-            Write-BootstrapLog "Launching Install-All.ps1 ..."
-            $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $installAll)
-            if ($ForceInstall) { $argList += "-Force" }
-
-            $proc = Start-Process -FilePath "powershell.exe" -ArgumentList $argList -Wait -PassThru -NoNewWindow
-            if ($proc.ExitCode -ne 0) {
-                throw "Install-All.ps1 exited with code $($proc.ExitCode)"
-            }
-            Write-BootstrapLog "Install-All.ps1 completed successfully." -Level SUCCESS
-        }
+    if (-not (Test-Path $installAll)) {
+        Write-BootstrapLog "Install-All.ps1 not found after extraction — skipping auto-run." -Level WARN
     }
     else {
-        Write-BootstrapLog "Scripts are ready. To install software run:"
-        Write-BootstrapLog "  cd `"$Destination`""
-        Write-BootstrapLog "  .\Install-All.ps1"
+        Write-BootstrapLog "Launching Install-All.ps1 ..."
+        $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "-Force", $installAll)
+        $proc = Start-Process -FilePath "powershell.exe" -ArgumentList $argList -Wait -PassThru -NoNewWindow
+        if ($proc.ExitCode -ne 0) {
+            throw "Install-All.ps1 exited with code $($proc.ExitCode)"
+        }
+        Write-BootstrapLog "Install-All.ps1 completed successfully." -Level SUCCESS
     }
-
     # Cleanup
     if (-not $KeepTemp) {
         Write-BootstrapLog "Cleaning up temp folder..."
