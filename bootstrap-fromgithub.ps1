@@ -40,133 +40,22 @@
     .\Bootstrap-FromGitHub.ps1 -Repo "isg187/azurecustom" -Branch "main" -RunInstallAll -Force
 #>
 
-[CmdletBinding()]
-param(
-    [Parameter(Mandatory = $true)]
-    [string]$Repo = "isg187/azurecustom",
+$Destination = "C:\ProgramData\SDL\scripts"
+$temp = "C:\Temp\SoftwareInstall"
+New-Item -ItemType Directory -Path $temp -Force | Out-Null
 
-    [string]$Branch = "main",
+# Download entire repo as zip
+$zipUrl = "https://github.com/isg187/azurecustom/archive/refs/heads/main.zip"
+$zipPath = "$temp\azurecustom.zip"
+Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
 
-    [string]$Destination = "C:\ProgramData\SDL\scripts",
+# Extract
+Expand-Archive -Path $zipPath -DestinationPath $Destination -Force
+$scriptRoot = Get-ChildItem -Path $Destination -Directory | Where-Object { $_.Name -eq "azurecustom-main" } | Select-Object -First 1 -ExpandProperty FullName
 
-    [string]$TempPath = "C:\Temp\SoftwareInstallers",
+# Run the main script with desired parameters
+& "$scriptRoot\install-all.ps1"
 
-    [switch]$Force,
-
-    [switch]$KeepTemp
-)
-
-$ErrorActionPreference = "Stop"
-function Write-BootstrapLog {
-    param(
-        [string]$Message,
-        [ValidateSet('INFO', 'WARN', 'ERROR', 'SUCCESS')]
-        [string]$Level = 'INFO'
-    )
-    $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-    $entry = "[$ts] [$Level] $Message"
-    switch ($Level) {
-        'ERROR' { Write-Host $entry -ForegroundColor Red }
-        'WARN' { Write-Host $entry -ForegroundColor Yellow }
-        'SUCCESS' { Write-Host $entry -ForegroundColor Green }
-        default { Write-Host $entry }
-    }
-}
-
-try {
-    Write-BootstrapLog "===== GitHub Bootstrap (Zip) ====="
-    Write-BootstrapLog "Repo        : $Repo"
-    Write-BootstrapLog "Branch      : $Branch"
-    Write-BootstrapLog "Destination : $Destination"
-    Write-BootstrapLog "TempPath    : $TempPath"
-    Write-BootstrapLog "Force       : $Force"
-    Write-BootstrapLog "RunInstallAll : $RunInstallAll"
-
-    # Prepare temp folder
-    if (Test-Path $TempPath) {
-        Remove-Item -Path $TempPath -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    New-Item -ItemType Directory -Path $TempPath -Force | Out-Null
-
-    # Download entire repo as zip
-    $zipUrl = "https://github.com/$Repo/archive/refs/heads/$Branch.zip"
-    $zipPath = Join-Path $TempPath "repo.zip"
-
-    Write-BootstrapLog "Downloading: $zipUrl"
-    Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
-
-    if (-not (Test-Path $zipPath) -or (Get-Item $zipPath).Length -lt 1KB) {
-        throw "Download failed or zip file is empty."
-    }
-    Write-BootstrapLog "Download complete ($([math]::Round((Get-Item $zipPath).Length / 1MB, 2)) MB)" -Level SUCCESS
-
-    # Extract
-    Write-BootstrapLog "Extracting zip..."
-    Expand-Archive -Path $zipPath -DestinationPath $TempPath -Force
-
-    # GitHub names the extracted folder Owner-Repo-Branch
-    $extractedRoot = Get-ChildItem -Path $TempPath -Directory | Where-Object { $_.Name -like "*-*" } | Select-Object -First 1 -ExpandProperty FullName
-
-    if (-not $extractedRoot) {
-        throw "Could not find extracted repository folder under $TempPath"
-    }
-    Write-BootstrapLog "Extracted to: $extractedRoot"
-
-    # Determine source of scripts
-    # Prefer a "scripts" subfolder if it exists, otherwise use the repo root
-    $scriptsSource = Join-Path $extractedRoot "scripts"
-    if (-not (Test-Path $scriptsSource)) {
-        $scriptsSource = $extractedRoot
-    }
-    Write-BootstrapLog "Scripts source: $scriptsSource"
-
-    # Prepare destination
-    if (Test-Path $Destination) {
-        if ($Force) {
-            Write-BootstrapLog "Removing existing destination (Force)..." -Level WARN
-            Remove-Item -Path $Destination -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        else {
-            Write-BootstrapLog "Destination already exists. Use -Force to overwrite." -Level WARN
-        }
-    }
-    New-Item -ItemType Directory -Path $Destination -Force | Out-Null
-
-    # Copy everything from scripts source into destination
-    Write-BootstrapLog "Copying scripts to $Destination ..."
-    Copy-Item -Path (Join-Path $scriptsSource "*") -Destination $Destination -Recurse -Force
-    Write-BootstrapLog "Copy complete." -Level SUCCESS
-
-    # Run Install-All.ps1
-    $installAll = Join-Path $Destination "Install-All.ps1"
-    if (-not (Test-Path $installAll)) {
-        # Fallback: search one level deeper
-        $found = Get-ChildItem -Path $Destination -Filter "Install-All.ps1" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($found) { $installAll = $found.FullName }
-    }
-
-    if (-not (Test-Path $installAll)) {
-        Write-BootstrapLog "Install-All.ps1 not found after extraction — skipping auto-run." -Level WARN
-    }
-    else {
-        Write-BootstrapLog "Launching Install-All.ps1 ..."
-        $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "-Force", $installAll)
-        $proc = Start-Process -FilePath "powershell.exe" -ArgumentList $argList -Wait -PassThru -NoNewWindow
-        if ($proc.ExitCode -ne 0) {
-            throw "Install-All.ps1 exited with code $($proc.ExitCode)"
-        }
-        Write-BootstrapLog "Install-All.ps1 completed successfully." -Level SUCCESS
-    }
-    # Cleanup
-    if (-not $KeepTemp) {
-        Write-BootstrapLog "Cleaning up temp folder..."
-        Remove-Item -Path $TempPath -Recurse -Force -ErrorAction SilentlyContinue
-    }
-
-    Write-BootstrapLog "===== Bootstrap finished =====" -Level SUCCESS
-    exit 0
-}
-catch {
-    Write-BootstrapLog "BOOTSTRAP FAILED: $($_.Exception.Message)" -Level ERROR
-    exit 1
-}
+# Cleanup
+Remove-Item -Path $temp -Recurse -Force -ErrorAction SilentlyContinue
+Write-Host "Windows Optimization completed."
