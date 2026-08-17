@@ -52,10 +52,15 @@ Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
 
 # Extract
 Expand-Archive -Path $zipPath -DestinationPath $Destination -Force
-$scriptRoot = Get-ChildItem -Path $Destination -Directory | Where-Object { $_.Name -eq "azurecustom-main" } | Select-Object -First 1 -ExpandProperty FullName
+# Move contents up one level if a single root folder was created
+$rootFolder = Get-ChildItem -Path $Destination -Directory | Select-Object -First 1
+if ($rootFolder) {
+    Get-ChildItem -Path $rootFolder.FullName -Force | Move-Item -Destination $Destination -Force
+    Remove-Item -Path $rootFolder.FullName -Recurse -Force
+}
 
 # Run the main script with desired parameters
-& "$scriptRoot\install-all.ps1"
+& "$Destination\install-all.ps1"
 
 # Cleanup
 Remove-Item -Path $temp -Recurse -Force -ErrorAction SilentlyContinue
