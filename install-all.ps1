@@ -28,18 +28,11 @@ $ErrorActionPreference = 'Stop'
 # ---------------------------------------------------------------------------
 # Dot-source common logger
 # ---------------------------------------------------------------------------
-$commonPath = Join-Path $PSScriptRoot "common\Write-Log.ps1"
-if (Test-Path $commonPath) {
-    . $commonPath
+function Write-Log {
+    param([string]$Message, [string]$Level = 'INFO')
+    $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    Write-Host "[$ts] [$Level] $Message"
 }
-else {
-    function Write-Log {
-        param([string]$Message, [string]$Level = 'INFO')
-        $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-        Write-Host "[$ts] [$Level] $Message"
-    }
-}
-
 # ---------------------------------------------------------------------------
 # Logging setup
 # ---------------------------------------------------------------------------
