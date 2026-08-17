@@ -43,6 +43,7 @@
 $Destination = "C:\ProgramData\SDL\scripts"
 $temp = "C:\Temp\SoftwareInstall"
 New-Item -ItemType Directory -Path $temp -Force | Out-Null
+New-Item -ItemType Directory -Path $Destination -Force | Out-Null
 
 # Download entire repo as zip
 $zipUrl = "https://github.com/isg187/azurecustom/archive/refs/heads/main.zip"

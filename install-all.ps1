@@ -31,9 +31,6 @@ param(
     [string]$InstallDir
 )
 
-#Requires -RunAsAdministrator
-
-Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # ---------------------------------------------------------------------------
