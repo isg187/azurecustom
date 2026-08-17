@@ -23,41 +23,16 @@
 .EXAMPLE
     .\Install-All.ps1 -Force -ContinueOnError
 #>
-
-[CmdletBinding()]
-param(
-    [switch]$Force,
-    [switch]$ContinueOnError,
-    [string]$InstallDir
-)
-
 $ErrorActionPreference = 'Stop'
-
-# ---------------------------------------------------------------------------
-# Dot-source common logger
-# ---------------------------------------------------------------------------
-$commonPath = Join-Path $PSScriptRoot "common\Write-Log.ps1"
-if (Test-Path $commonPath) {
-    . $commonPath
-}
-else {
-    function Write-Log {
-        param([string]$Message, [string]$Level = 'INFO')
-        $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-        Write-Host "[$ts] [$Level] $Message"
-    }
-}
-
+$Force = $true
+$ContinueOnError = $true
 # ---------------------------------------------------------------------------
 # Logging setup
 # ---------------------------------------------------------------------------
-$logDir = Join-Path $PSScriptRoot "logs"
+$logDir = "C:\ProgramData\SDL\scripts\logs"
 if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
 $script:LogPath = Join-Path $logDir ("Install-All_{0}.log" -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
-
-if (-not $InstallDir) {
-    $InstallDir = Join-Path $PSScriptRoot "install"
-}
+$InstallDir = "C:\ProgramData\SDL\scripts\install"
 
 Write-Log "=============================================="
 Write-Log "  Software Installation Orchestrator (Dynamic)"
@@ -67,26 +42,12 @@ Write-Log "ContinueOnError  : $ContinueOnError"
 Write-Log "InstallDir       : $InstallDir"
 Write-Log "Log              : $script:LogPath"
 
-
 # ---------------------------------------------------------------------------
 # Discover installer scripts
 # ---------------------------------------------------------------------------
-if (-not (Test-Path $InstallDir)) {
-    Write-Log "Install directory not found: $InstallDir" -Level ERROR
-    exit 1
-}
-
-$installerScripts = Get-ChildItem -Path $InstallDir -Filter "*.ps1" -File |
-    Sort-Object Name
-
-if (-not $installerScripts -or $installerScripts.Count -eq 0) {
-    Write-Log "No .ps1 installer scripts found in $InstallDir" -Level ERROR
-    exit 1
-}
-
+$installerScripts = Get-ChildItem -Path $InstallDir -Filter "*.ps1" -File | Sort-Object Name
 Write-Log "Discovered $($installerScripts.Count) installer script(s):"
 $installerScripts | ForEach-Object { Write-Log "  - $($_.Name)" }
-
 
 # ---------------------------------------------------------------------------
 # Run each installer
