@@ -60,7 +60,7 @@ if ($rootFolder) {
 }
 
 # Run the main script with desired parameters
-& "$Destination\install-all.ps1"
+& "C:\ProgramData\SDL\scripts\install-all.ps1"
 
 # Cleanup
 Remove-Item -Path $temp -Recurse -Force -ErrorAction SilentlyContinue
