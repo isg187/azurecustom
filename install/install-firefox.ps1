@@ -38,43 +38,58 @@ param(
 )
 
 #Requires -RunAsAdministrator
-
-Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# ---------------------------------------------------------------------------
-# Dot-source common helpers
-# ---------------------------------------------------------------------------
-$commonPath = Join-Path $PSScriptRoot "..\common\Write-Log.ps1"
-if (Test-Path $commonPath) {
-    . $commonPath
-}
-else {
-    function Write-Log {
-        param([string]$Message, [string]$Level = 'INFO')
-        $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-        Write-Host "[$ts] [$Level] $Message"
+# Initialize logging
+function Write-Log {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0)]
+        [string]$Message,
+
+        [ValidateSet('INFO', 'WARN', 'ERROR', 'SUCCESS', 'DEBUG')]
+        [string]$Level = 'INFO',
+
+        [string]$LogPath = $script:LogPath
+    )
+
+    if (-not $LogPath) {
+        $LogPath = Join-Path $env:TEMP "SoftwareInstall_$(Get-Date -Format 'yyyyMMdd').log"
+    }
+
+    $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    $entry = "[$timestamp] [$Level] $Message"
+
+    # Console output with color
+    switch ($Level) {
+        'ERROR' { Write-Host $entry -ForegroundColor Red }
+        'WARN' { Write-Host $entry -ForegroundColor Yellow }
+        'SUCCESS' { Write-Host $entry -ForegroundColor Green }
+        'DEBUG' { if ($VerbosePreference -eq 'Continue') { Write-Host $entry -ForegroundColor Gray } }
+        default { Write-Host $entry }
+    }
+
+    # File output
+    try {
+        $logDir = Split-Path $LogPath -Parent
+        if ($logDir -and -not (Test-Path $logDir)) {
+            New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+        }
+        Add-Content -Path $LogPath -Value $entry -ErrorAction Stop
+    }
+    catch {
+        Write-Warning "Failed to write to log file: $($_.Exception.Message)"
     }
 }
-
-# ---------------------------------------------------------------------------
-# Initialize logging
-# ---------------------------------------------------------------------------
-if (-not $LogPath) {
-    $logDir = Join-Path $PSScriptRoot "..\logs"
-    if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
-    $LogPath = Join-Path $logDir ("Install-Firefox_{0}.log" -f (Get-Date -Format 'yyyyMMdd'))
-}
-$script:LogPath = $LogPath
+$logDir = "C:\ProgramData\SDL\scripts\logs"
+$LogPath = Join-Path $logDir ("Install-Firefox_{0}.log" -f (Get-Date -Format 'yyyyMMdd'))
 
 Write-Log "===== Starting Firefox installation ====="
 Write-Log "Log file : $LogPath"
 Write-Log "Force    : $Force"
 Write-Log "Release  : $(if ($Regular) { 'Regular' } else { 'ESR' })"
 
-# ---------------------------------------------------------------------------
 # Helper: Get currently installed Firefox version
-# ---------------------------------------------------------------------------
 function Get-InstalledFirefoxVersion {
     $paths = @(
         'HKLM:\SOFTWARE\Mozilla\Mozilla Firefox',
@@ -113,9 +128,7 @@ function Get-InstalledFirefoxVersion {
     return $null
 }
 
-# ---------------------------------------------------------------------------
 # Helper: Resolve latest Firefox version + MSI URL
-# ---------------------------------------------------------------------------
 function Get-FirefoxDownloadInfo {
     param([switch]$Esr)
 
@@ -179,9 +192,7 @@ function Get-FirefoxDownloadInfo {
     }
 }
 
-# ---------------------------------------------------------------------------
 # Main logic
-# ---------------------------------------------------------------------------
 try {
     $installedVersion = Get-InstalledFirefoxVersion
 

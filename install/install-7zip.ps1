@@ -35,42 +35,15 @@ param(
 )
 
 #Requires -RunAsAdministrator
-
-Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-
-# ---------------------------------------------------------------------------
-# Dot-source common helpers
-# ---------------------------------------------------------------------------
-$commonPath = Join-Path $PSScriptRoot "..\common\Write-Log.ps1"
-if (Test-Path $commonPath) {
-    . $commonPath
-}
-else {
-    function Write-Log {
-        param([string]$Message, [string]$Level = 'INFO')
-        $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-        Write-Host "[$ts] [$Level] $Message"
-    }
-}
-
-# ---------------------------------------------------------------------------
 # Initialize logging
-# ---------------------------------------------------------------------------
-if (-not $LogPath) {
-    $logDir = Join-Path $PSScriptRoot "..\logs"
-    if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
-    $LogPath = Join-Path $logDir ("Install-7Zip_{0}.log" -f (Get-Date -Format 'yyyyMMdd'))
-}
-$script:LogPath = $LogPath
-
+$logDir = "C:\ProgramData\SDL\scripts\logs"
+$LogPath = Join-Path $logDir ("Install-7Zip_{0}.log" -f (Get-Date -Format 'yyyyMMdd'))
 Write-Log "===== Starting 7-Zip installation ====="
 Write-Log "Log file : $LogPath"
 Write-Log "Force    : $Force"
 
-# ---------------------------------------------------------------------------
 # Helper: Get currently installed 7-Zip version
-# ---------------------------------------------------------------------------
 function Get-Installed7ZipVersion {
     $paths = @(
         'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\7-Zip',
@@ -91,9 +64,7 @@ function Get-Installed7ZipVersion {
     return $null
 }
 
-# ---------------------------------------------------------------------------
 # Helper: Get latest 7-Zip download info from GitHub
-# ---------------------------------------------------------------------------
 function Get-7ZipDownloadInfo {
     param([switch]$PreferExe)
 
@@ -140,9 +111,7 @@ function Get-7ZipDownloadInfo {
     }
 }
 
-# ---------------------------------------------------------------------------
-# Main logic
-# ---------------------------------------------------------------------------
+# Main trigger
 try {
     $installedVersion = Get-Installed7ZipVersion
 
