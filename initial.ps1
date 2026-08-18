@@ -120,7 +120,6 @@ try {
 
     Write-Log "Discovered $($installerScripts.Count) installer script(s):"
     $installerScripts | ForEach-Object { Write-Log "  - $($_.Name)" }
-    Write-Log ""
 
     # Run each installer
     $results = @()
@@ -165,7 +164,6 @@ try {
     }
 
     # Summary
-    Write-Log ""
     Write-Log "=============================================="
     Write-Log "  Summary"
     Write-Log "=============================================="
