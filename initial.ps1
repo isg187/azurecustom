@@ -19,14 +19,20 @@ $LogDir = Join-Path $Destination "logs"
 # Logger
 function Write-Log {
     param(
-        [Parameter(Mandatory = $true, Position = 0)]
-        [string]$Message,
+        [Parameter(Position = 0)]
+        [AllowEmptyString()]
+        [string]$Message = '',
         [ValidateSet('INFO', 'WARN', 'ERROR', 'SUCCESS', 'DEBUG')]
         [string]$Level = 'INFO'
     )
 
     $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-    $entry = "[$ts] [$Level] $Message"
+    if ([string]::IsNullOrEmpty($Message)) {
+        $entry = ''
+    }
+    else {
+        $entry = "[$ts] [$Level] $Message"
+    }
 
     switch ($Level) {
         'ERROR' { Write-Host $entry -ForegroundColor Red }
@@ -46,7 +52,6 @@ function Write-Log {
         catch { }
     }
 }
-
 # Prepare folders and log
 try {
     if (Test-Path $TempPath) {
