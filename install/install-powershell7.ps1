@@ -30,7 +30,8 @@
 param(
     [switch]$Force,
     [string]$LogPath,
-    [string]$DownloadPath = (Join-Path $env:TEMP "PowerShell7Install")
+    [string]$DownloadPath = (Join-Path $env:TEMP "PowerShell7Install"),
+    [string]$ExpectedSha256
 )
 
 #Requires -RunAsAdministrator
@@ -40,8 +41,9 @@ $ErrorActionPreference = 'Stop'
 function Write-Log {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true, Position = 0)]
-        [string]$Message,
+        [Parameter(Position = 0)]
+        [AllowEmptyString()]
+        [string]$Message = '',
 
         [ValidateSet('INFO', 'WARN', 'ERROR', 'SUCCESS', 'DEBUG')]
         [string]$Level = 'INFO',
@@ -83,6 +85,81 @@ $LogPath = Join-Path $logDir ("Install-PowerShell7_{0}.log" -f (Get-Date -Format
 Write-Log "===== Starting PowerShell 7 installation ====="
 Write-Log "Log file : $LogPath"
 Write-Log "Force    : $Force"
+
+
+# ---------------------------------------------------------------------------
+# Integrity: Authenticode + SHA-256
+# ---------------------------------------------------------------------------
+function Test-InstallerIntegrity {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string[]]$ExpectedPublishers,
+
+        [string]$ExpectedSha256,
+
+        [switch]$AllowUnsigned
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "Integrity check failed: file not found: $Path"
+    }
+
+    Write-Log "Running integrity checks on: $Path"
+
+    # --- SHA-256 ---
+    $actualHash = (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToUpperInvariant()
+    Write-Log "SHA256: $actualHash"
+
+    if ($ExpectedSha256) {
+        $expected = $ExpectedSha256.Trim().ToUpperInvariant()
+        if ($actualHash -ne $expected) {
+            throw "SHA-256 mismatch. Expected $expected but got $actualHash"
+        }
+        Write-Log "SHA-256 verified against expected value." -Level SUCCESS
+    }
+    else {
+        Write-Log "No ExpectedSha256 supplied — hash recorded for audit; not enforced." -Level WARN
+    }
+
+    # --- Authenticode ---
+    $sig = Get-AuthenticodeSignature -FilePath $Path
+    Write-Log "Authenticode Status : $($sig.Status)"
+    if ($sig.SignerCertificate) {
+        Write-Log "Signer Subject      : $($sig.SignerCertificate.Subject)"
+        Write-Log "Signer Thumbprint   : $($sig.SignerCertificate.Thumbprint)"
+    }
+
+    if ($sig.Status -ne 'Valid') {
+        if ($AllowUnsigned) {
+            Write-Log "Authenticode not valid ($($sig.Status)) but -AllowUnsigned was specified." -Level WARN
+            if (-not $ExpectedSha256) {
+                throw "Unsigned/invalid signature requires -ExpectedSha256 so the file can still be integrity-checked."
+            }
+            return
+        }
+        throw "Authenticode signature is not valid. Status=$($sig.Status)"
+    }
+
+    $subject = $sig.SignerCertificate.Subject
+    $matched = $false
+    foreach ($pub in $ExpectedPublishers) {
+        if ($subject -like "*$pub*") {
+            $matched = $true
+            Write-Log "Publisher matched: $pub" -Level SUCCESS
+            break
+        }
+    }
+    if (-not $matched) {
+        throw "Unexpected publisher. Subject='$subject'. Expected one of: $($ExpectedPublishers -join ', ')"
+    }
+
+    Write-Log "Integrity checks passed." -Level SUCCESS
+}
+
 
 # Helper: Get currently installed PowerShell 7 version
 function Get-InstalledPowerShell7Version {
@@ -189,6 +266,11 @@ try {
 
     $fileSizeMB = [math]::Round((Get-Item $msiPath).Length / 1MB, 2)
     Write-Log "Download complete ($fileSizeMB MB)" -Level SUCCESS
+
+    # Integrity checks (Authenticode + SHA-256)
+    Test-InstallerIntegrity -Path $msiPath `
+        -ExpectedPublishers @('Microsoft Corporation', 'Microsoft') `
+        -ExpectedSha256 $ExpectedSha256
 
     Write-Log "Starting silent MSI installation..."
 
