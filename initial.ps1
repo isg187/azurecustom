@@ -10,7 +10,7 @@
 #>
 
 $ErrorActionPreference = 'Stop'
-$Destination = "C:\ProgramData\SDL\scripts"
+$Destination = "C:\ProgramData\SDL\scripts\coreapps"
 $TempPath = "C:\Temp\SoftwareInstall"
 $RepoZipUrl = "https://github.com/isg187/azurecustom/archive/refs/heads/main.zip"
 $InstallDir = Join-Path $Destination "install"
